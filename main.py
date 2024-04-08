@@ -1,6 +1,8 @@
 from enum import Enum
 import curses
 import random
+
+### Eventual saving data implementation ###
 # import json
 
 # class GameIO(object):
@@ -35,7 +37,7 @@ import random
 #con = sqlite3.connect("game.db")
 
 #con.execute("""
-#CREATE TABLE IF NOT EXISTS some_table
+#CREATE TABLE IF NOT EXISTS player_data
 #        (health INTEGER,
 #        points INTEGER);
 #""")
@@ -93,16 +95,35 @@ class Enemy(Entity):
 
 class Player(Entity):
     
-    def __init__(self, name: str, health: int, strength: int, points: int) -> None:
+    def __init__(self, name: str, health: int, strength: int, points: int, inventory:dict) -> None:
         super().__init__(name, health, strength)
         self.points = points
-
+        self.inventory = inventory
     def change_points(self, amount:int):
         if self.points + amount > 0:
             self.points += amount
         else:
             self.points = 0
 
+
+class Item(object):
+
+    def __init__(self, name:str, price:int):
+        self.name = name
+        self.price = price ## Unused
+        
+        
+
+class Food(Item):
+
+    def __init__(self, name:str, price:int, healthchange:int, healthchangerand = 0):
+        super().__init__(name, price)
+
+    def use_item(player:Player):
+        healthboost = healthchange
+        if healthchangerandom:
+            healthboost += random.randint(1, healthchangerandom)
+        player.health += healthboost
 
 class Outcomes(Enum):
     VICTORY=0
@@ -174,6 +195,9 @@ def create_menu(screen:curses.window, title:str, options:dict[str:int], index:in
             index += 1
         elif key in ["KEY_ENTER", '\n']:
             return [x for x in enumerate(options) if x[0] == index][0]
+            #selected_option = [x for x in options.items() if x[0] == index][0]
+            #return selected_option[1]  # Return the value instead of the index
+
 
 
 
@@ -182,7 +206,8 @@ def combat_loop(screen, enemy:Enemy, player:Player)->Outcomes:
     combat_options = {
         'block' : 0,
         'attack': 1,
-        'run away': 2
+        'use item' : 2,
+        'run away (50% of success)': 3
     }
     while 1:
         x = create_menu(screen, f"What is you move against {enemy.name}?", combat_options, enemy=enemy, player=player)
@@ -203,6 +228,15 @@ def combat_loop(screen, enemy:Enemy, player:Player)->Outcomes:
                 center_text(screen, f"You dealt {damage} damage")
             handle_input(screen)
         elif x == 2:
+            food_menu = {}
+            for item, amount in player.inventory.items():
+                food_menu[item.name] = hash(item)
+            res = create_menu(screen, "Inventory", food_menu)
+            rev_dict = {v: k for k, v in food_menu.items()}
+            with open("log.txt", "w") as debug_file:
+                to_log = [str(rev_dict), str(res)]
+                debug_file.write(str(to_log))
+        elif x == 3:
             if random.randint(0,1):
                 return Outcomes.ESCAPE
             else:
@@ -213,6 +247,7 @@ def combat_loop(screen, enemy:Enemy, player:Player)->Outcomes:
         if enemy.dead:
             return Outcomes.VICTORY
         enemy.clear_blocking()
+        
         ## Enemy action
 
         enemy_actions = [EntityMoves.ATTACK, EntityMoves.BLOCK]
@@ -246,7 +281,12 @@ def main(screen:curses.window):
     screen.keypad(True)
     curses.curs_set(0)
     enemy=None
-    player=Player("Player", 100, 1, 0)
+    init_player_inv = {
+        Food("Cheesecake", 10, 4, 3) : 2,
+        Food("Deluxe Cheesecake", 50, 8, 5) : 1
+        #"Bomb" : 1
+    }
+    player=Player("Player", 100, 1, 0, init_player_inv)
     fun=False
     while 1:
         screen.clear()
@@ -257,6 +297,7 @@ def main(screen:curses.window):
             key = handle_input(screen)
             GAMESTAGE = Stage.ENCOUNTER
         elif GAMESTAGE == Stage.ENCOUNTER:
+            # TODO implement naming based on strength of enemy
             enemy_names = ['Placeholder John', 'Placeholder Tom']
             enemy = Enemy(name=enemy_names[random.randint(0,1)], health=random.randint(1,100), strength=int(random.randint(1, 5)+(DIFFICULTY*player.points)))
             encounter_options = {
