@@ -2,7 +2,7 @@ from enum import Enum
 import curses
 import random
 
-### Eventual saving data implementation ###
+### Potential saving data implementation ###
 # import json
 
 # class GameIO(object):
@@ -52,6 +52,8 @@ def clamp(num:int, minval:int, maxval:int):
     else:
         return num
 
+
+
 class Entity(object):
     
     def __init__(self, name:str, health:int, strength:int) -> None:
@@ -63,12 +65,14 @@ class Entity(object):
 
 
 
-    def take_damage(self, amount:int): # idk probably shouldnt implement this here as not as clear as directly passing in damage and also makes you have to account for this
-
+    def take_damage(self, amount:int)->bool: # idk probably shouldnt implement this here as not as clear as directly passing in damage and also makes you have to account for this
         if self.blocking:
             self.__take_damage(amount//2)
+            return amount // 2
         else:
             self.__take_damage(amount)
+            return amount
+
         
     def __take_damage(self, amount:int):
         
@@ -95,16 +99,22 @@ class Enemy(Entity):
 
 class Player(Entity):
     
-    def __init__(self, name: str, health: int, strength: int, points: int, inventory:dict) -> None:
+    def __init__(self, name: str, health: int, strength: int, points: int, inventory:dict, screen:curses.window) -> None:
         super().__init__(name, health, strength)
         self.points = points
         self.inventory = inventory
+        self.screenref = screen
     def change_points(self, amount:int):
         if self.points + amount > 0:
             self.points += amount
         else:
             self.points = 0
 
+
+class GameRoundInfo:
+    def __init__(self, player:Player, enemy:Enemy) -> None:
+        self.player = player
+        self.enemy = enemy
 
 class Item(object):
 
@@ -121,12 +131,41 @@ class Food(Item):
         self.healthchange = healthchange
         self.healthchangerand = healthchangerand
 
-    def use_item(self, player:Player):
+    def use_item(self, gameinfo:GameRoundInfo):
+        enemy = gameinfo.enemy
+        player = gameinfo.player
         healthboost = self.healthchange
-        if self.healthchangerandom:
-            healthboost += random.randint(1, self.healthchangerandom)
+        if self.healthchangerand:
+            healthboost += random.randint(1, self.healthchangerand)
         player.health += healthboost
+        player.screenref.clear()
+        player.screenref.refresh()
+        center_text(player.screenref, "You use %s heal for %i healthpoints" % (self.name, healthboost))
+        handle_input(player.screenref)
         
+
+class Weapon(Item):
+
+    def __init__(self, name:str, price:int, basedamage:int, damagerand = 0):
+        super().__init__(name, price)
+        self.basedamage = basedamage
+        self.damagerand = damagerand
+
+    def use_item(self, gameinfo:GameRoundInfo):
+        enemy = gameinfo.enemy
+        player = gameinfo.player
+        damage = self.basedamage
+        if self.damagerand:
+            damage += random.randint(1, self.damagerand)
+        enemy.take_damage(damage)
+        player.screenref.clear()
+        player.screenref.refresh()
+        center_text(player.screenref, "You damage %s heal for %i healthpoints with the %s" % (enemy.name, damage, self.name))
+        handle_input(player.screenref)
+
+    
+
+
 
 class Outcomes(Enum):
     VICTORY=0
@@ -175,7 +214,7 @@ def show_debug(screen:curses.window, text:str):
     center_text(screen, text)
     handle_input(screen)
 
-def create_menu(screen:curses.window, title:str, options:dict[str:int], index:int=0, enemy:Enemy=None, startpos=3, player:Player=None)->bool:
+def create_menu(screen:curses.window, title:str, options:dict[str:int], index:int=0, enemy:Enemy=None, startpos=3, player:Player=None)->int:
     rows, cols = screen.getmaxyx()
     option_amount = len(options)-1
     while 1:
@@ -199,21 +238,53 @@ def create_menu(screen:curses.window, title:str, options:dict[str:int], index:in
         elif key in ["KEY_ENTER", '\n']:
             test = [x for x in enumerate(options) if x[0] == index]
             return test[0]#.append()
-            #selected_option = [x for x in options.items() if x[0] == index][0]
-            #return selected_option[1]
 
 
+def create_menu_items(screen:curses.window, title:str, options:dict[Item:int], index:int=0, startpos=3, player:Player=None)->Item|bool:
+    rows, cols = screen.getmaxyx()
+    tmp = {}
+    for item, amount in options.items():
+        if amount >= 1:
+            tmp[item] = amount
+    options = tmp
+    option_amount = len(options)-1
+    if bool(options) == False: # Check if empty 
+        return False
+    while 1:
+        screen.clear()
+        screen.refresh()
+        center_text(screen, title)
+        if player:
+            display_info(screen, player)
+        for option in enumerate(options):
+            if option[0] == index:
+                center_text(screen, f"{option[1].name} {options[option[1]]}", offsetr=startpos+option[0], mode=curses.A_REVERSE)
+            else:
+                center_text(screen, f"{option[1].name} {options[option[1]]}", offsetr=startpos+option[0])
+        key = handle_input(screen) 
+        if key == "KEY_UP" and index > 0:
+            index -= 1
+        elif key == "KEY_DOWN" and index < option_amount:
+            index += 1
+        elif key in ["KEY_ENTER", '\n']:
+            test = [x for x in enumerate(options) if x[0] == index]
+            return test[0][1]
 
 
 
 def combat_loop(screen, enemy:Enemy, player:Player)->Outcomes:
-    combat_options = {
-        'block' : 0,
-        'attack': 1,
-        'use item' : 2,
-        'run away (50% of success)': 3
-    }
+    
     while 1:
+        inv_opt = "use item"
+        if bool(player.inventory) == False:
+            inv_opt = 'use item (empty inventory)'
+        combat_options = {
+            'block' : 0,
+            'attack': 1,
+            inv_opt : 2,
+            'run away (50% of success)': 3
+        }
+        
         x = create_menu(screen, f"What is you move against {enemy.name}?", combat_options, enemy=enemy, player=player)
         x = x[0]
         center_text(screen, f"{enemy.name} {enemy.health}")
@@ -223,24 +294,23 @@ def combat_loop(screen, enemy:Enemy, player:Player)->Outcomes:
             screen.refresh()
             screen.clear()
             damage = (random.randint(0, 5) + player.points)
+            damage = enemy.take_damage(damage)
             if enemy.blocking:
-                enemy.take_damage(damage)
-                damage //= 2
                 center_text(screen, f"You attack but {enemy.name} blocks and you deal {damage} damage")
             else:
-                enemy.take_damage(damage)
                 center_text(screen, f"You dealt {damage} damage")
             handle_input(screen)
         elif x == 2:
-            food_menu = player.inventory
-            res = create_menu(screen, "Inventory", {k.name:v for (k,v)in food_menu.items()})
-            chosen_item:Food = None
-            for k, v in food_menu.items():
-                if k.name == res[1]:
-                    chosen_item = k
-            if chosen_item != None:
-                chosen_item.use_item(player) 
-            
+            gameinfo = GameRoundInfo(player, enemy)
+            item_menu = player.inventory
+            chosen_item:Item = create_menu_items(screen, "Inventory", item_menu)
+            if chosen_item != False:
+                chosen_item.use_item(gameinfo)
+                player.inventory[chosen_item] -= 1
+                if player.inventory[chosen_item] <= 0:
+                    del player.inventory[chosen_item]
+            else:
+                continue
         elif x == 3:
             if random.randint(0,1):
                 return Outcomes.ESCAPE
@@ -264,9 +334,8 @@ def combat_loop(screen, enemy:Enemy, player:Player)->Outcomes:
 
         if action == EntityMoves.ATTACK:
             damage = enemy.strength + (random.randint(0, enemy.strength//2))
-            player.take_damage(damage)
+            damage = player.take_damage(damage)
             if player.blocking:
-                damage //= 2
                 center_text(screen,f'{enemy.name} attacks but you block and {enemy.name} deals {damage} damage')
             else:
                 center_text(screen,f'{enemy.name} slashes you for {damage} damage')    
@@ -288,10 +357,11 @@ def main(screen:curses.window):
     enemy=None
     init_player_inv = {
         Food("Cheesecake", 10, 4, 3) : 2,
-        Food("Deluxe Cheesecake", 50, 8, 5) : 1
+        Food("Deluxe Cheesecake", 50, 8, 5) : 1,
         #"Bomb" : 1
+        Weapon("Bomb", 25, 8, 5) : 1,
     }
-    player=Player("Player", 100, 1, 0, init_player_inv)
+    player=Player("Player", 100, 1, 0, init_player_inv, screen=screen)
     fun=False
     while 1:
         screen.clear()

@@ -1,1 +1,0 @@
-((0, 'Cheesecake'), <__main__.Food object at 0x7f7202047580>)
