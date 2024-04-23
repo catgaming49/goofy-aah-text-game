@@ -118,12 +118,15 @@ class Food(Item):
 
     def __init__(self, name:str, price:int, healthchange:int, healthchangerand = 0):
         super().__init__(name, price)
+        self.healthchange = healthchange
+        self.healthchangerand = healthchangerand
 
-    def use_item(player:Player):
-        healthboost = healthchange
-        if healthchangerandom:
-            healthboost += random.randint(1, healthchangerandom)
+    def use_item(self, player:Player):
+        healthboost = self.healthchange
+        if self.healthchangerandom:
+            healthboost += random.randint(1, self.healthchangerandom)
         player.health += healthboost
+        
 
 class Outcomes(Enum):
     VICTORY=0
@@ -194,9 +197,10 @@ def create_menu(screen:curses.window, title:str, options:dict[str:int], index:in
         elif key == "KEY_DOWN" and index < option_amount:
             index += 1
         elif key in ["KEY_ENTER", '\n']:
-            return [x for x in enumerate(options) if x[0] == index][0]
+            test = [x for x in enumerate(options) if x[0] == index]
+            return test[0]#.append()
             #selected_option = [x for x in options.items() if x[0] == index][0]
-            #return selected_option[1]  # Return the value instead of the index
+            #return selected_option[1]
 
 
 
@@ -228,14 +232,15 @@ def combat_loop(screen, enemy:Enemy, player:Player)->Outcomes:
                 center_text(screen, f"You dealt {damage} damage")
             handle_input(screen)
         elif x == 2:
-            food_menu = {}
-            for item, amount in player.inventory.items():
-                food_menu[item.name] = hash(item)
-            res = create_menu(screen, "Inventory", food_menu)
-            rev_dict = {v: k for k, v in food_menu.items()}
-            with open("log.txt", "w") as debug_file:
-                to_log = [str(rev_dict), str(res)]
-                debug_file.write(str(to_log))
+            food_menu = player.inventory
+            res = create_menu(screen, "Inventory", {k.name:v for (k,v)in food_menu.items()})
+            chosen_item:Food = None
+            for k, v in food_menu.items():
+                if k.name == res[1]:
+                    chosen_item = k
+            if chosen_item != None:
+                chosen_item.use_item(player) 
+            
         elif x == 3:
             if random.randint(0,1):
                 return Outcomes.ESCAPE

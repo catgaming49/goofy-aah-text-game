@@ -1,1 +1,1 @@
-["{8782884149948: 'Cheesecake', 8782884147149: 'Deluxe Cheesecake'}", "(1, 'Deluxe Cheesecake')"]
+((0, 'Cheesecake'), <__main__.Food object at 0x7f7202047580>)
